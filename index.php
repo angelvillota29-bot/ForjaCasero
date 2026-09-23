@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Forja Casero — Panel de bots</title>
-<link rel="stylesheet" href="assets/styles.css?v=1">
+<link rel="stylesheet" href="assets/styles.css?v=<?= filemtime(__DIR__ . '/assets/styles.css') ?>">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -29,6 +29,6 @@
 
 <div id="app" class="hidden"></div>
 
-<script src="assets/app.js?v=1"></script>
+<script src="assets/app.js?v=<?= filemtime(__DIR__ . '/assets/app.js') ?>"></script>
 </body>
 </html>
