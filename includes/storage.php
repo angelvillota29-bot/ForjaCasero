@@ -19,7 +19,17 @@ function defaultData(): array {
             'allowedEmails' => $seedEmail !== '' ? [$seedEmail] : [],
         ],
         'bots' => [],
+        'records' => defaultRecords(),
     ];
+}
+
+function defaultRecords(): array {
+    require_once __DIR__ . '/collections.php';
+    $records = [];
+    foreach (array_keys(collectionSchemas()) as $key) {
+        $records[$key] = [];
+    }
+    return $records;
 }
 
 function readData(): array {
@@ -42,6 +52,10 @@ function readData(): array {
     $data += defaultData();
     $data['settings'] = ($data['settings'] ?? []) + defaultData()['settings'];
     $data['bots'] = $data['bots'] ?? [];
+    $data['records'] = ($data['records'] ?? []) + defaultRecords();
+    foreach (defaultRecords() as $key => $empty) {
+        $data['records'][$key] = $data['records'][$key] ?? [];
+    }
     return $data;
 }
 

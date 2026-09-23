@@ -8,12 +8,38 @@ const NICHES = {
     otro: 'Otro',
 };
 
+const BOT_TABS = [
+    { key: 'resumen', label: 'Resumen' },
+    { key: 'conversations', label: 'Conversaciones' },
+    { key: 'vault', label: 'Bóveda' },
+    { key: 'leads', label: 'Leads' },
+    { key: 'payments', label: 'Cobros' },
+    { key: 'tickets', label: 'Tickets' },
+    { key: 'reviews', label: 'Reseñas' },
+    { key: 'campaigns', label: 'Campañas' },
+    { key: 'templates', label: 'Plantillas' },
+    { key: 'flujo', label: 'Flujo' },
+    { key: 'knowledge', label: 'Conocimiento' },
+    { key: 'improvements', label: 'Mejoras' },
+];
+
 const state = {
     user: null,
     view: 'resumen',
     bots: [],
     settings: null,
+    schemas: null,
+    currentBotId: null,
+    botTab: 'resumen',
 };
+
+async function getSchemas() {
+    if (!state.schemas) {
+        const res = await api('api/collections/schema.php');
+        state.schemas = res.schemas;
+    }
+    return state.schemas;
+}
 
 async function api(path, options = {}) {
     const res = await fetch(path, {
@@ -216,7 +242,7 @@ async function renderResumen(main) {
   `;
     document.getElementById('goToBots')?.addEventListener('click', () => switchView('bots'));
     main.querySelectorAll('.bot-card').forEach((el) => {
-        el.addEventListener('click', () => switchView('bots'));
+        el.addEventListener('click', () => openBotWorkspace(el.dataset.id));
     });
 }
 
@@ -261,10 +287,7 @@ async function renderBots(main) {
   `;
     document.getElementById('addBotBtn').addEventListener('click', () => openBotModal(null));
     main.querySelectorAll('.bot-card').forEach((el) => {
-        el.addEventListener('click', () => {
-            const bot = state.bots.find((b) => b.id === el.dataset.id);
-            openBotModal(bot);
-        });
+        el.addEventListener('click', () => openBotWorkspace(el.dataset.id));
     });
 }
 
@@ -379,6 +402,261 @@ function openBotModal(bot) {
             }
         });
     }
+}
+
+/* ---------------- Bot workspace (panel completo por bot) ---------------- */
+
+async function openBotWorkspace(botId) {
+    state.currentBotId = botId;
+    state.botTab = 'resumen';
+    state.view = 'bots';
+    setActiveNav('bots');
+    const main = document.getElementById('mainContent');
+    main.innerHTML = '<div class="empty-state">Cargando…</div>';
+    try {
+        const [botsRes] = await Promise.all([api('api/bots/list.php'), getSchemas()]);
+        state.bots = botsRes.bots;
+        renderBotWorkspaceShell(main);
+    } catch (err) {
+        main.innerHTML = `<div class="empty-state">${escapeHtml(err.message)}</div>`;
+    }
+}
+
+function renderBotWorkspaceShell(main) {
+    const bot = state.bots.find((b) => b.id === state.currentBotId);
+    if (!bot) {
+        main.innerHTML = '<div class="empty-state">Ese bot ya no existe.</div>';
+        return;
+    }
+    const statusBadge = bot.status === 'activo'
+        ? '<span class="badge badge-green">● activo</span>'
+        : '<span class="badge badge-muted">○ pausado</span>';
+
+    main.innerHTML = `
+    <div class="topbar">
+      <div>
+        <div class="breadcrumb"><a href="#" id="backToBots" style="color:inherit;">Bots</a> / ${escapeHtml(bot.name)}</div>
+        <h1 class="page-title">${escapeHtml(bot.name)} ${statusBadge}</h1>
+      </div>
+      <button class="btn btn-secondary" id="editBotBtn">Editar bot</button>
+    </div>
+    <div class="bot-tabs" id="botTabs"></div>
+    <div id="botTabContent"></div>
+  `;
+    document.getElementById('backToBots').addEventListener('click', (e) => { e.preventDefault(); switchView('bots'); });
+    document.getElementById('editBotBtn').addEventListener('click', () => openBotModal(bot));
+
+    const tabsHost = document.getElementById('botTabs');
+    tabsHost.innerHTML = BOT_TABS.map((t) => `<button class="nav-item bot-tab-btn" data-tab="${t.key}" style="display:inline-flex;width:auto;margin-right:6px;">${t.label}</button>`).join('');
+    tabsHost.querySelectorAll('.bot-tab-btn').forEach((btn) => {
+        btn.addEventListener('click', () => switchBotTab(btn.dataset.tab));
+    });
+    switchBotTab(state.botTab);
+}
+
+async function switchBotTab(tab) {
+    state.botTab = tab;
+    document.querySelectorAll('.bot-tab-btn').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.tab === tab);
+    });
+    const host = document.getElementById('botTabContent');
+    host.innerHTML = '<div class="empty-state">Cargando…</div>';
+    try {
+        if (tab === 'resumen') await renderBotResumenTab(host);
+        else if (tab === 'flujo') renderBotFlujoTab(host);
+        else await renderCollectionTab(host, tab);
+    } catch (err) {
+        host.innerHTML = `<div class="empty-state">${escapeHtml(err.message)}</div>`;
+    }
+}
+
+async function renderBotResumenTab(host) {
+    const bot = state.bots.find((b) => b.id === state.currentBotId);
+    const collectionsToCount = ['leads', 'tickets', 'payments', 'conversations'];
+    const counts = {};
+    await Promise.all(collectionsToCount.map(async (key) => {
+        const res = await api(`api/collections/list.php?collection=${key}&botId=${encodeURIComponent(bot.id)}`);
+        counts[key] = res.items.length;
+    }));
+
+    host.innerHTML = `
+    <div class="intro-banner">
+      <b>${escapeHtml(bot.name)}</b> — ${escapeHtml(NICHES[bot.niche] || bot.niche)}.
+      ${bot.description ? escapeHtml(bot.description) : 'Sin descripción todavía.'}
+      ${bot.url ? `<br>URL: <a href="${escapeAttr(bot.url)}" target="_blank" rel="noopener">${escapeHtml(bot.url)}</a>` : ''}
+    </div>
+    <div class="stat-row">
+      <div class="stat-card"><div class="stat-label">Leads</div><div class="stat-value">${counts.leads}</div></div>
+      <div class="stat-card"><div class="stat-label">Tickets</div><div class="stat-value">${counts.tickets}</div></div>
+      <div class="stat-card"><div class="stat-label">Cobros</div><div class="stat-value">${counts.payments}</div></div>
+      <div class="stat-card"><div class="stat-label">Conversaciones</div><div class="stat-value">${counts.conversations}</div></div>
+    </div>
+    <div class="card">
+      <h3>Llave API</h3>
+      <p class="card-desc">
+        ${bot.keyMode === 'own'
+            ? `Este bot usa su propia llave${bot.ownApiKeyHint ? ` (${bot.ownApiKeyHint})` : ''}.`
+            : 'Este bot usa la llave API compartida del panel.'}
+      </p>
+    </div>
+  `;
+}
+
+function renderBotFlujoTab(host) {
+    const bot = state.bots.find((b) => b.id === state.currentBotId);
+    const keySource = bot.keyMode === 'own' ? 'Llave propia de este bot' : 'Llave API compartida del panel';
+    host.innerHTML = `
+    <div class="intro-banner">
+      Radiografía simple de cómo procesa mensajes este bot. No es en vivo (eso vive en la
+      Cloudflare del propio bot) — es la referencia de su configuración en Forja Casero.
+    </div>
+    <div class="stat-row">
+      <div class="stat-card"><div class="stat-label">Canales</div><div class="stat-value" style="font-size:15px;">WhatsApp · Telegram · Web</div></div>
+      <div class="stat-card"><div class="stat-label">Tipo de negocio</div><div class="stat-value" style="font-size:15px;">${escapeHtml(NICHES[bot.niche] || bot.niche)}</div></div>
+      <div class="stat-card"><div class="stat-label">Autenticación IA</div><div class="stat-value" style="font-size:15px;">${escapeHtml(keySource)}</div></div>
+      <div class="stat-card"><div class="stat-label">Estado</div><div class="stat-value" style="font-size:15px;">${bot.status === 'activo' ? 'Activo' : 'Pausado'}</div></div>
+    </div>
+    <div class="card">
+      <h3>Pipeline</h3>
+      <p class="card-desc">Cliente (WhatsApp / Telegram / Web) → Bot (Cloudflare Worker) → ${escapeHtml(keySource)} → Respuesta al cliente. Los módulos de Leads, Tickets, Cobros, etc. de este panel son registros propios de Forja Casero, independientes del código del bot.</p>
+    </div>
+  `;
+}
+
+/* ---- CRUD genérico para cada módulo (Leads, Bóveda, Tickets, Reseñas...) ---- */
+
+function fieldInputHtml(key, def, value) {
+    const id = `rf_${key}`;
+    if (def.type === 'select') {
+        const options = Object.entries(def.options || {}).map(([val, label]) =>
+            `<option value="${escapeAttr(val)}" ${value === val ? 'selected' : ''}>${escapeHtml(label)}</option>`
+        ).join('');
+        return `<select id="${id}">${options}</select>`;
+    }
+    if (def.type === 'textarea') {
+        return `<textarea id="${id}">${escapeHtml(value || '')}</textarea>`;
+    }
+    if (def.secret) {
+        return `<input type="password" id="${id}" placeholder="${value ? 'Guardado — deja vacío para no cambiarlo' : 'Escribe el valor'}">`;
+    }
+    const type = def.type === 'date' ? 'date' : (def.type === 'number' ? 'number' : 'text');
+    return `<input type="${type}" id="${id}" value="${escapeAttr(value ?? '')}">`;
+}
+
+function openRecordModal(collectionKey, item) {
+    const schema = state.schemas[collectionKey];
+    const fields = schema.fields;
+    const isEdit = !!item;
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h3>${isEdit ? 'Editar' : 'Agregar'} — ${escapeHtml(schema.label)}</h3>
+        <button class="modal-close" id="closeModal">✕</button>
+      </div>
+      ${Object.entries(fields).map(([key, def]) => {
+          const rawValue = def.secret
+              ? (item && item[key + 'Set'] ? item[key + 'Hint'] : '')
+              : (item ? item[key] : (def.default ?? ''));
+          return `
+        <div class="field">
+          <label>${escapeHtml(def.label)}${def.required ? ' *' : ''}</label>
+          ${fieldInputHtml(key, def, rawValue)}
+          ${def.secret ? '<div class="field-hint">Se guarda en el servidor, nunca se vuelve a mostrar completo.</div>' : ''}
+        </div>`;
+      }).join('')}
+      <div class="modal-actions">
+        ${isEdit ? '<button class="btn btn-danger" id="deleteRecordBtn">Eliminar</button>' : '<span></span>'}
+        <div class="right">
+          <button class="btn btn-secondary" id="cancelModal">Cancelar</button>
+          <button class="btn" id="saveRecordBtn">Guardar</button>
+        </div>
+      </div>
+    </div>
+  `;
+    document.body.appendChild(backdrop);
+    const close = () => backdrop.remove();
+    backdrop.querySelector('#closeModal').addEventListener('click', close);
+    backdrop.querySelector('#cancelModal').addEventListener('click', close);
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+
+    backdrop.querySelector('#saveRecordBtn').addEventListener('click', async () => {
+        const payload = { collection: collectionKey, botId: state.currentBotId, id: item?.id };
+        for (const key of Object.keys(fields)) {
+            const el = backdrop.querySelector(`#rf_${key}`);
+            payload[key] = el.value;
+        }
+        try {
+            await api('api/collections/save.php', { method: 'POST', body: payload });
+            toast(isEdit ? 'Guardado' : 'Agregado');
+            close();
+            switchBotTab(collectionKey);
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+    });
+
+    if (isEdit) {
+        backdrop.querySelector('#deleteRecordBtn').addEventListener('click', async () => {
+            if (!confirm('¿Eliminar este registro? No se puede deshacer.')) return;
+            try {
+                await api('api/collections/delete.php', { method: 'POST', body: { collection: collectionKey, id: item.id } });
+                toast('Eliminado');
+                close();
+                switchBotTab(collectionKey);
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        });
+    }
+}
+
+function recordSummaryHtml(collectionKey, item) {
+    const schema = state.schemas[collectionKey];
+    const entries = Object.entries(schema.fields).filter(([, def]) => !def.secret && def.type !== 'textarea');
+    const parts = entries.slice(0, 3).map(([key, def]) => {
+        const val = item[key];
+        if (!val) return '';
+        const label = def.type === 'select' ? (def.options[val] || val) : val;
+        return `<span class="badge">${escapeHtml(String(label))}</span>`;
+    }).filter(Boolean).join(' ');
+    const titleKey = Object.keys(schema.fields)[0];
+    const title = item[titleKey] || '(sin título)';
+    return `
+    <div class="bot-card record-card" data-id="${escapeAttr(item.id)}">
+      <div class="bot-card-top">
+        <div class="bot-name">${escapeHtml(title)}</div>
+      </div>
+      <div class="bot-card-foot">${parts}</div>
+    </div>
+  `;
+}
+
+async function renderCollectionTab(host, collectionKey) {
+    const schema = state.schemas[collectionKey];
+    const res = await api(`api/collections/list.php?collection=${collectionKey}&botId=${encodeURIComponent(state.currentBotId)}`);
+    const items = res.items;
+
+    host.innerHTML = `
+    <div class="intro-banner">${escapeHtml(schema.description || '')}</div>
+    <div class="topbar" style="margin-bottom:14px;">
+      <div></div>
+      <button class="btn" id="addRecordBtn">+ Agregar</button>
+    </div>
+    ${items.length === 0
+        ? `<div class="empty-state">Todavía no hay nada en ${escapeHtml(schema.label)}.</div>`
+        : `<div class="bots-grid">${items.map((it) => recordSummaryHtml(collectionKey, it)).join('')}</div>`
+    }
+  `;
+    document.getElementById('addRecordBtn').addEventListener('click', () => openRecordModal(collectionKey, null));
+    host.querySelectorAll('.record-card').forEach((el) => {
+        el.addEventListener('click', () => {
+            const item = items.find((it) => it.id === el.dataset.id);
+            openRecordModal(collectionKey, item);
+        });
+    });
 }
 
 /* ---------------- Conexiones ---------------- */
