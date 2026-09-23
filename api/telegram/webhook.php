@@ -4,8 +4,9 @@
 // (X-Telegram-Bot-Api-Secret-Token), generado al conectar el bot.
 require_once __DIR__ . '/../../includes/storage.php';
 require_once __DIR__ . '/../../includes/telegram.php';
+require_once __DIR__ . '/../../includes/ai_engine.php';
 
-set_time_limit(60);
+set_time_limit(90);
 
 $botId = $_GET['bot'] ?? '';
 $data = readData();
@@ -35,6 +36,7 @@ if ($chatId === null || $text === '') {
     http_response_code(200);
     exit;
 }
+$chatIdStr = (string) $chatId;
 
 $apiKey = resolveOpenAiKey($bot, $data['settings']);
 if ($apiKey === '') {
@@ -47,42 +49,30 @@ if ($apiKey === '') {
 }
 
 $fromName = trim(($message['from']['first_name'] ?? '') . ' ' . ($message['from']['last_name'] ?? ''));
-$systemPrompt = "Eres el asistente de '{$bot['name']}'" .
-    (!empty($bot['description']) ? ", un negocio de tipo {$bot['niche']}. {$bot['description']}" : '.') .
-    (!empty($bot['aiInstructions']) ? "\n\nInstrucciones adicionales:\n{$bot['aiInstructions']}" : '') .
-    "\n\nResponde en español, de forma breve y natural, como si fueras parte del negocio.";
 
-$reply = openaiChat($apiKey, $bot['aiModel'] ?? 'gpt-4o-mini', [
-    ['role' => 'system', 'content' => $systemPrompt],
-    ['role' => 'user', 'content' => $text],
-]);
+$history = getChatHistory($data, $botId, $chatIdStr);
+$reply = runAgent($apiKey, $bot['aiModel'] ?? 'gpt-4o-mini', $bot, $botId, $data, $history, $text);
 
-if ($reply === null || $reply === '') {
-    $reply = 'Perdón, tuve un problema pensando la respuesta. ¿Puedes intentar de nuevo?';
-}
+pushChatHistory($data, $botId, $chatIdStr, 'user', $text);
+pushChatHistory($data, $botId, $chatIdStr, 'assistant', $reply);
 
 telegramApiPost($bot['telegramToken'], 'sendMessage', [
     'chat_id' => $chatId,
     'text' => $reply,
 ]);
 
-// Deja registro en el módulo Conversaciones del bot (best-effort, no bloquea la respuesta).
-$data = readData();
-foreach ($data['bots'] as $b2) {
-    if ($b2['id'] !== $botId) continue;
-    $data['records']['conversations'][] = [
-        'id' => bin2hex(random_bytes(8)),
-        'botId' => $botId,
-        'customer' => $fromName !== '' ? $fromName : ('Telegram #' . $chatId),
-        'channel' => 'telegram',
-        'sentiment' => 'neutral',
-        'summary' => "Cliente: {$text}\nBot: {$reply}",
-        'createdBy' => 'telegram-webhook',
-        'createdAt' => date('c'),
-        'updatedAt' => date('c'),
-    ];
-    writeData($data);
-    break;
-}
+$data['records']['conversations'][] = [
+    'id' => bin2hex(random_bytes(8)),
+    'botId' => $botId,
+    'customer' => $fromName !== '' ? $fromName : ('Telegram #' . $chatIdStr),
+    'channel' => 'telegram',
+    'sentiment' => 'neutral',
+    'summary' => "Cliente: {$text}\nBot: {$reply}",
+    'createdBy' => 'telegram-webhook',
+    'createdAt' => date('c'),
+    'updatedAt' => date('c'),
+];
+
+writeData($data);
 
 http_response_code(200);

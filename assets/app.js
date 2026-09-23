@@ -343,6 +343,11 @@ function openBotModal(bot) {
         <input type="text" id="fAiModel" value="${escapeAttr(bot?.aiModel || 'gpt-4o-mini')}" placeholder="gpt-4o-mini">
       </div>
       <div class="field">
+        <label>Info del negocio (horarios, precios, ubicación, políticas…)</label>
+        <textarea id="fBusinessInfo" placeholder="Ej. Horario: L-D 6pm-12am. Ubicación: Cra 26 #10-93. Métodos de pago: efectivo, Nequi.">${escapeHtml(bot?.businessInfo || '')}</textarea>
+        <div class="field-hint">Esta es la única fuente de verdad que la IA usa para no inventar datos — entre más completa, mejor contesta.</div>
+      </div>
+      <div class="field">
         <label>Instrucciones para la IA (opcional)</label>
         <textarea id="fAiInstructions" placeholder="Ej. Sé breve, ofrece agendar una llamada si preguntan por precios.">${escapeHtml(bot?.aiInstructions || '')}</textarea>
       </div>
@@ -379,6 +384,7 @@ function openBotModal(bot) {
             status: backdrop.querySelector('input[name="fStatus"]:checked').value,
             keyMode: backdrop.querySelector('input[name="fKeyMode"]:checked').value,
             aiModel: backdrop.querySelector('#fAiModel').value.trim(),
+            businessInfo: backdrop.querySelector('#fBusinessInfo').value.trim(),
             aiInstructions: backdrop.querySelector('#fAiInstructions').value.trim(),
         };
         const ownKeyInput = backdrop.querySelector('#fOwnKey').value;

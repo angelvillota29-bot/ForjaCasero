@@ -20,6 +20,7 @@ function defaultData(): array {
         ],
         'bots' => [],
         'records' => defaultRecords(),
+        'chatHistory' => [],
     ];
 }
 
@@ -56,6 +57,7 @@ function readData(): array {
     foreach (defaultRecords() as $key => $empty) {
         $data['records'][$key] = $data['records'][$key] ?? [];
     }
+    $data['chatHistory'] = $data['chatHistory'] ?? [];
     return $data;
 }
 
