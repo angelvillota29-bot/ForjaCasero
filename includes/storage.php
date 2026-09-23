@@ -17,6 +17,7 @@ function defaultData(): array {
         'settings' => [
             'sharedApiKey' => '',
             'allowedEmails' => $seedEmail !== '' ? [$seedEmail] : [],
+            'googleClientSecret' => '',
         ],
         'bots' => [],
         'records' => defaultRecords(),

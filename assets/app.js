@@ -516,8 +516,34 @@ async function renderBotResumenTab(host) {
       </p>
     </div>
     <div class="card" id="telegramCard"></div>
+    <div class="card" id="googleCard"></div>
   `;
     renderTelegramCard(host.querySelector('#telegramCard'), bot);
+    renderGoogleCard(host.querySelector('#googleCard'), bot);
+}
+
+function renderGoogleCard(container, bot) {
+    if (bot.googleConnected) {
+        container.innerHTML = `
+      <h3>Google Calendar</h3>
+      <p class="card-desc">Conectado. Este bot puede crear y consultar eventos en tu Google Calendar.</p>
+    `;
+        return;
+    }
+    container.innerHTML = `
+    <h3>Google Calendar</h3>
+    <p class="card-desc">Conecta tu cuenta de Google para que este bot pueda crear y consultar eventos de calendario.</p>
+    <button class="btn" id="connectGoogleBtn">Conectar Google</button>
+  `;
+    container.querySelector('#connectGoogleBtn').addEventListener('click', async () => {
+        try {
+            const res = await api(`api/google/auth-url.php?botId=${encodeURIComponent(bot.id)}`);
+            window.open(res.url, '_blank');
+            toast('Completa el permiso en la pestaña que se abrió, luego recarga esta página');
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+    });
 }
 
 function renderTelegramCard(container, bot) {
@@ -747,7 +773,30 @@ async function renderConexiones(main) {
       </div>
       <button class="btn" id="saveSharedKeyBtn">Guardar</button>
     </div>
+    <div class="card">
+      <h3>Google (Calendar / Sheets / Gmail)</h3>
+      <p class="card-desc">
+        Client Secret del OAuth client dedicado a esta integración (distinto del login con Google).
+        ${state.settings.googleClientSecretHint ? `Actual: <b style="color:var(--text)">${state.settings.googleClientSecretHint}</b>` : 'Todavía no está configurado.'}
+      </p>
+      <div class="field">
+        <label>Nuevo Client Secret (deja vacío para no cambiarlo)</label>
+        <input type="password" id="googleSecretInput" placeholder="GOCSPX-...">
+      </div>
+      <button class="btn" id="saveGoogleSecretBtn">Guardar</button>
+    </div>
   `;
+    document.getElementById('saveGoogleSecretBtn').addEventListener('click', async () => {
+        const value = document.getElementById('googleSecretInput').value;
+        if (value === '') { toast('No escribiste ningún secret nuevo', 'error'); return; }
+        try {
+            await api('api/settings/update.php', { method: 'POST', body: { googleClientSecret: value } });
+            toast('Google Client Secret actualizado');
+            renderConexiones(main);
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+    });
     document.getElementById('saveSharedKeyBtn').addEventListener('click', async () => {
         const value = document.getElementById('sharedKeyInput').value;
         if (value === '') { toast('No escribiste ninguna llave nueva', 'error'); return; }

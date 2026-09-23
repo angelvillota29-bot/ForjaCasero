@@ -7,7 +7,8 @@ $bots = array_map(function ($bot) {
     $bot['ownApiKeySet'] = !empty($bot['ownApiKey']);
     $bot['ownApiKeyHint'] = !empty($bot['ownApiKey']) ? keyHint($bot['ownApiKey']) : null;
     $bot['telegramConnected'] = !empty($bot['telegramToken']);
-    unset($bot['ownApiKey'], $bot['telegramToken'], $bot['telegramWebhookSecret']);
+    $bot['googleConnected'] = !empty($bot['googleRefreshToken']);
+    unset($bot['ownApiKey'], $bot['telegramToken'], $bot['telegramWebhookSecret'], $bot['googleRefreshToken']);
     return $bot;
 }, $data['bots']);
 

@@ -10,6 +10,8 @@ sendJson([
     'settings' => [
         'sharedApiKeySet' => !empty($settings['sharedApiKey']),
         'sharedApiKeyHint' => !empty($settings['sharedApiKey']) ? keyHint($settings['sharedApiKey']) : null,
+        'googleClientSecretSet' => !empty($settings['googleClientSecret']),
+        'googleClientSecretHint' => !empty($settings['googleClientSecret']) ? keyHint($settings['googleClientSecret']) : null,
         'allowedEmails' => $settings['allowedEmails'],
     ],
 ]);

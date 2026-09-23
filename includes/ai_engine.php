@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/google_api.php';
+
 // El "cerebro" del bot: prompt estructurado (como el de Forja: Rol, Info del
 // negocio, Frenos, Estilo), memoria de conversación por chat, y tools que la
 // IA puede llamar (buscar conocimiento, capturar lead, escalar a humano) --
@@ -13,6 +15,13 @@ function buildSystemPrompt(array $bot): string {
         (!empty($bot['niche']) ? ", un negocio de tipo {$bot['niche']}." : '.');
     if (!empty($bot['description'])) {
         $lines[] = $bot['description'];
+    }
+
+    $lines[] = "";
+    date_default_timezone_set('America/Bogota');
+    $lines[] = "Fecha y hora actual (America/Bogota): " . date('l j \d\e F Y, H:i');
+    if (!empty($bot['googleRefreshToken'])) {
+        $lines[] = "Tienes acceso a Google Calendar del dueño (crear_evento_calendario, consultar_calendario). Usa fechas ISO 8601 con offset -05:00.";
     }
 
     $lines[] = "";
@@ -41,8 +50,8 @@ function buildSystemPrompt(array $bot): string {
     return implode("\n", $lines);
 }
 
-function toolDefinitions(): array {
-    return [
+function toolDefinitions(array $bot): array {
+    $tools = [
         [
             'type' => 'function',
             'function' => [
@@ -88,6 +97,36 @@ function toolDefinitions(): array {
             ],
         ],
     ];
+
+    if (!empty($bot['googleRefreshToken'])) {
+        $tools[] = [
+            'type' => 'function',
+            'function' => [
+                'name' => 'crear_evento_calendario',
+                'description' => 'Crea un evento en el Google Calendar del dueño.',
+                'parameters' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'titulo' => ['type' => 'string'],
+                        'inicio' => ['type' => 'string', 'description' => 'Fecha y hora de inicio en formato ISO 8601 con zona horaria, ej. 2026-09-24T15:00:00-05:00'],
+                        'fin' => ['type' => 'string', 'description' => 'Fecha y hora de fin en formato ISO 8601 con zona horaria'],
+                        'descripcion' => ['type' => 'string'],
+                    ],
+                    'required' => ['titulo', 'inicio', 'fin'],
+                ],
+            ],
+        ];
+        $tools[] = [
+            'type' => 'function',
+            'function' => [
+                'name' => 'consultar_calendario',
+                'description' => 'Consulta los próximos eventos del Google Calendar del dueño.',
+                'parameters' => ['type' => 'object', 'properties' => new stdClass()],
+            ],
+        ];
+    }
+
+    return $tools;
 }
 
 function searchKnowledge(array $data, string $botId, string $query): string {
@@ -134,7 +173,34 @@ function addRecord(array &$data, string $collection, array $fields): void {
     ]);
 }
 
-function executeTool(string $name, array $args, string $botId, array &$data): string {
+function executeTool(string $name, array $args, string $botId, array &$data, array $bot): string {
+    if ($name === 'crear_evento_calendario') {
+        $token = getGoogleAccessToken($bot, $data['settings']);
+        if ($token === null) {
+            return 'El dueño todavía no conectó Google Calendar.';
+        }
+        $result = calendarCreateEvent($token, $args['titulo'] ?? 'Evento', $args['inicio'] ?? '', $args['fin'] ?? '', $args['descripcion'] ?? '');
+        if (!empty($result['id'])) {
+            return 'Evento creado: ' . ($args['titulo'] ?? '') . ' (' . ($args['inicio'] ?? '') . ').';
+        }
+        return 'No se pudo crear el evento: ' . ($result['error']['message'] ?? 'error desconocido');
+    }
+    if ($name === 'consultar_calendario') {
+        $token = getGoogleAccessToken($bot, $data['settings']);
+        if ($token === null) {
+            return 'El dueño todavía no conectó Google Calendar.';
+        }
+        $events = calendarListUpcoming($token, 8);
+        if (!$events) {
+            return 'No hay eventos próximos.';
+        }
+        $lines = [];
+        foreach ($events as $ev) {
+            $when = $ev['start']['dateTime'] ?? $ev['start']['date'] ?? '';
+            $lines[] = "- {$ev['summary']} ({$when})";
+        }
+        return implode("\n", $lines);
+    }
     if ($name === 'buscar_conocimiento') {
         return searchKnowledge($data, $botId, $args['consulta'] ?? '');
     }
@@ -189,7 +255,7 @@ function runAgent(string $apiKey, string $model, array $bot, string $botId, arra
         [['role' => 'user', 'content' => $userMessage]]
     );
 
-    $tools = toolDefinitions();
+    $tools = toolDefinitions($bot);
 
     for ($round = 0; $round < MAX_TOOL_ROUNDS; $round++) {
         $result = httpPostJson('https://api.openai.com/v1/chat/completions', [
@@ -213,7 +279,7 @@ function runAgent(string $apiKey, string $model, array $bot, string $botId, arra
         foreach ($toolCalls as $call) {
             $fnName = $call['function']['name'] ?? '';
             $fnArgs = json_decode($call['function']['arguments'] ?? '{}', true) ?: [];
-            $toolResult = executeTool($fnName, $fnArgs, $botId, $data);
+            $toolResult = executeTool($fnName, $fnArgs, $botId, $data, $bot);
             $messages[] = [
                 'role' => 'tool',
                 'tool_call_id' => $call['id'],

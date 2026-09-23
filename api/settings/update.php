@@ -9,6 +9,10 @@ if (array_key_exists('sharedApiKey', $input)) {
     $data['settings']['sharedApiKey'] = trim($input['sharedApiKey']);
 }
 
+if (array_key_exists('googleClientSecret', $input)) {
+    $data['settings']['googleClientSecret'] = trim($input['googleClientSecret']);
+}
+
 if (array_key_exists('addEmail', $input) && trim($input['addEmail']) !== '') {
     $email = strtolower(trim($input['addEmail']));
     if (!in_array($email, $data['settings']['allowedEmails'], true)) {
