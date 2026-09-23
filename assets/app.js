@@ -338,6 +338,14 @@ function openBotModal(bot) {
         <input type="password" id="fOwnKey" placeholder="${bot?.ownApiKeyHint ? 'Guardada: ' + bot.ownApiKeyHint + ' — deja vacío para no cambiarla' : 'Pega la API key de este bot'}">
         <div class="field-hint">Se guarda en el servidor, nunca se vuelve a mostrar completa.</div>
       </div>
+      <div class="field">
+        <label>Modelo de IA (OpenAI)</label>
+        <input type="text" id="fAiModel" value="${escapeAttr(bot?.aiModel || 'gpt-4o-mini')}" placeholder="gpt-4o-mini">
+      </div>
+      <div class="field">
+        <label>Instrucciones para la IA (opcional)</label>
+        <textarea id="fAiInstructions" placeholder="Ej. Sé breve, ofrece agendar una llamada si preguntan por precios.">${escapeHtml(bot?.aiInstructions || '')}</textarea>
+      </div>
       <div class="modal-actions">
         ${isEdit ? '<button class="btn btn-danger" id="deleteBotBtn">Eliminar</button>' : '<span></span>'}
         <div class="right">
@@ -370,6 +378,8 @@ function openBotModal(bot) {
             url: backdrop.querySelector('#fUrl').value.trim(),
             status: backdrop.querySelector('input[name="fStatus"]:checked').value,
             keyMode: backdrop.querySelector('input[name="fKeyMode"]:checked').value,
+            aiModel: backdrop.querySelector('#fAiModel').value.trim(),
+            aiInstructions: backdrop.querySelector('#fAiInstructions').value.trim(),
         };
         const ownKeyInput = backdrop.querySelector('#fOwnKey').value;
         if (payload.keyMode === 'own' && ownKeyInput !== '') {
@@ -499,7 +509,54 @@ async function renderBotResumenTab(host) {
             : 'Este bot usa la llave API compartida del panel.'}
       </p>
     </div>
+    <div class="card" id="telegramCard"></div>
   `;
+    renderTelegramCard(host.querySelector('#telegramCard'), bot);
+}
+
+function renderTelegramCard(container, bot) {
+    if (bot.telegramConnected) {
+        container.innerHTML = `
+      <h3>Telegram</h3>
+      <p class="card-desc">
+        Conectado como <b style="color:var(--text)">@${escapeHtml(bot.telegramUsername || '')}</b>.
+        Este bot ya contesta solo por Telegram usando su llave de IA.
+      </p>
+      <button class="btn btn-danger" id="disconnectTgBtn">Desconectar Telegram</button>
+    `;
+        container.querySelector('#disconnectTgBtn').addEventListener('click', async () => {
+            if (!confirm('¿Desconectar Telegram de este bot?')) return;
+            try {
+                await api('api/bots/disconnect-telegram.php', { method: 'POST', body: { botId: bot.id } });
+                toast('Telegram desconectado');
+                switchBotTab('resumen');
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        });
+        return;
+    }
+
+    container.innerHTML = `
+    <h3>Telegram</h3>
+    <p class="card-desc">Conecta un bot de Telegram (creado con @BotFather) para que este bot conteste solo, usando su llave de IA.</p>
+    <div class="field">
+      <label>Token de Telegram</label>
+      <input type="password" id="tgTokenInput" placeholder="Pégalo aquí">
+    </div>
+    <button class="btn" id="connectTgBtn">Conectar</button>
+  `;
+    container.querySelector('#connectTgBtn').addEventListener('click', async () => {
+        const token = container.querySelector('#tgTokenInput').value.trim();
+        if (!token) { toast('Pega el token de Telegram', 'error'); return; }
+        try {
+            const res = await api('api/bots/connect-telegram.php', { method: 'POST', body: { botId: bot.id, telegramToken: token } });
+            toast(`Conectado como @${res.username}`);
+            switchBotTab('resumen');
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+    });
 }
 
 function renderBotFlujoTab(host) {

@@ -6,7 +6,8 @@ $data = readData();
 $bots = array_map(function ($bot) {
     $bot['ownApiKeySet'] = !empty($bot['ownApiKey']);
     $bot['ownApiKeyHint'] = !empty($bot['ownApiKey']) ? keyHint($bot['ownApiKey']) : null;
-    unset($bot['ownApiKey']);
+    $bot['telegramConnected'] = !empty($bot['telegramToken']);
+    unset($bot['ownApiKey'], $bot['telegramToken'], $bot['telegramWebhookSecret']);
     return $bot;
 }, $data['bots']);
 

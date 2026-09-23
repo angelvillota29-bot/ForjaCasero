@@ -14,6 +14,8 @@ $url = trim($input['url'] ?? '');
 $status = ($input['status'] ?? 'activo') === 'pausado' ? 'pausado' : 'activo';
 $keyMode = ($input['keyMode'] ?? 'shared') === 'own' ? 'own' : 'shared';
 $ownApiKeyInput = $input['ownApiKey'] ?? null; // null = no tocar; '' = borrar; string = nueva llave
+$aiInstructions = trim($input['aiInstructions'] ?? '');
+$aiModel = trim($input['aiModel'] ?? 'gpt-4o-mini');
 
 $data = readData();
 $now = date('c');
@@ -29,6 +31,8 @@ if ($id) {
             $bot['url'] = $url;
             $bot['status'] = $status;
             $bot['keyMode'] = $keyMode;
+            $bot['aiInstructions'] = $aiInstructions;
+            $bot['aiModel'] = $aiModel;
             if ($ownApiKeyInput !== null) {
                 $bot['ownApiKey'] = $ownApiKeyInput;
             }
@@ -54,6 +58,8 @@ if ($id) {
         'status' => $status,
         'keyMode' => $keyMode,
         'ownApiKey' => $keyMode === 'own' ? ($ownApiKeyInput ?? '') : '',
+        'aiInstructions' => $aiInstructions,
+        'aiModel' => $aiModel,
         'createdBy' => $userEmail,
         'createdAt' => $now,
         'updatedAt' => $now,
