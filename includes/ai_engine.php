@@ -248,11 +248,14 @@ function pushChatHistory(array &$data, string $botId, string $chatId, string $ro
 
 // Corre el loop de tool-calling de OpenAI. Devuelve el texto final para el
 // cliente; muta $data si alguna tool escribió algo (el caller debe guardar).
-function runAgent(string $apiKey, string $model, array $bot, string $botId, array &$data, array $history, string $userMessage): string {
+function runAgent(string $apiKey, string $model, array $bot, string $botId, array &$data, array $history, string $userMessage, ?array $userContent = null): string {
+    // $userContent, si viene, es un array de "content parts" estilo OpenAI
+    // vision (texto + imagen) para el turno actual -- $userMessage sigue
+    // siendo el texto plano que se guarda en el historial/log.
     $messages = array_merge(
         [['role' => 'system', 'content' => buildSystemPrompt($bot)]],
         $history,
-        [['role' => 'user', 'content' => $userMessage]]
+        [['role' => 'user', 'content' => $userContent ?? $userMessage]]
     );
 
     $tools = toolDefinitions($bot);

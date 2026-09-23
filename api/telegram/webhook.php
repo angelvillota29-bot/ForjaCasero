@@ -29,10 +29,12 @@ if (!hash_equals($bot['telegramWebhookSecret'], $headerSecret)) {
 $update = json_decode(file_get_contents('php://input'), true);
 $message = $update['message'] ?? null;
 $text = trim($message['text'] ?? '');
+$caption = trim($message['caption'] ?? '');
+$photos = $message['photo'] ?? null;
+$voice = $message['voice'] ?? $message['audio'] ?? null;
 $chatId = $message['chat']['id'] ?? null;
 
-// Confirma rápido a Telegram aunque no haya texto (stickers, fotos, etc.)
-if ($chatId === null || $text === '') {
+if ($chatId === null || ($text === '' && !$photos && !$voice)) {
     http_response_code(200);
     exit;
 }
@@ -48,12 +50,48 @@ if ($apiKey === '') {
     exit;
 }
 
+$userText = $text;
+$userContent = null; // content multimodal (texto + imagen) para el turno actual
+
+if ($voice) {
+    $fileUrl = telegramFileUrl($bot['telegramToken'], $voice['file_id']);
+    $bytes = $fileUrl ? downloadFileBytes($fileUrl) : null;
+    $transcribed = $bytes !== null ? openaiTranscribeAudio($apiKey, $bytes, 'audio.ogg', $voice['mime_type'] ?? 'audio/ogg') : null;
+    if ($transcribed === null || trim($transcribed) === '') {
+        telegramApiPost($bot['telegramToken'], 'sendMessage', [
+            'chat_id' => $chatId,
+            'text' => 'No pude escuchar bien esa nota de voz, ¿puedes escribirlo?',
+        ]);
+        http_response_code(200);
+        exit;
+    }
+    $userText = trim($transcribed);
+} elseif ($photos) {
+    $largest = end($photos); // Telegram manda el array de menor a mayor resolución
+    $fileUrl = telegramFileUrl($bot['telegramToken'], $largest['file_id']);
+    $bytes = $fileUrl ? downloadFileBytes($fileUrl) : null;
+    if ($bytes === null) {
+        telegramApiPost($bot['telegramToken'], 'sendMessage', [
+            'chat_id' => $chatId,
+            'text' => 'No pude descargar esa imagen, ¿puedes intentar de nuevo?',
+        ]);
+        http_response_code(200);
+        exit;
+    }
+    $dataUrl = 'data:image/jpeg;base64,' . base64_encode($bytes);
+    $userText = $caption !== '' ? $caption : '[Imagen]';
+    $userContent = [
+        ['type' => 'text', 'text' => $caption !== '' ? $caption : 'Describe o interpreta esta imagen y responde de forma útil.'],
+        ['type' => 'image_url', 'image_url' => ['url' => $dataUrl]],
+    ];
+}
+
 $fromName = trim(($message['from']['first_name'] ?? '') . ' ' . ($message['from']['last_name'] ?? ''));
 
 $history = getChatHistory($data, $botId, $chatIdStr);
-$reply = runAgent($apiKey, $bot['aiModel'] ?? 'gpt-4o-mini', $bot, $botId, $data, $history, $text);
+$reply = runAgent($apiKey, $bot['aiModel'] ?? 'gpt-4o-mini', $bot, $botId, $data, $history, $userText, $userContent);
 
-pushChatHistory($data, $botId, $chatIdStr, 'user', $text);
+pushChatHistory($data, $botId, $chatIdStr, 'user', $userText);
 pushChatHistory($data, $botId, $chatIdStr, 'assistant', $reply);
 
 telegramApiPost($bot['telegramToken'], 'sendMessage', [
@@ -67,7 +105,7 @@ $data['records']['conversations'][] = [
     'customer' => $fromName !== '' ? $fromName : ('Telegram #' . $chatIdStr),
     'channel' => 'telegram',
     'sentiment' => 'neutral',
-    'summary' => "Cliente: {$text}\nBot: {$reply}",
+    'summary' => "Cliente: {$userText}\nBot: {$reply}",
     'createdBy' => 'telegram-webhook',
     'createdAt' => date('c'),
     'updatedAt' => date('c'),
