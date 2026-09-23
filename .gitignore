@@ -1,0 +1,7 @@
+# Datos reales (bots, llaves, correos con acceso) -- viven en un volumen
+# persistente de Easypanel, nunca en el repositorio.
+/data/
+
+# Basura común de editor / sistema operativo
+.DS_Store
+Thumbs.db
