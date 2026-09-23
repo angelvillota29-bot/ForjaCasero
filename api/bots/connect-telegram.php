@@ -24,7 +24,7 @@ foreach ($data['bots'] as &$bot) {
     }
 
     $webhookSecret = bin2hex(random_bytes(24));
-    $publicBase = rtrim((!empty($_SERVER['HTTPS']) ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? ''), '/');
+    $publicBase = rtrim((isHttpsRequest() ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? ''), '/');
     $webhookUrl = $publicBase . '/api/telegram/webhook.php?bot=' . urlencode($botId);
 
     $setResult = telegramApiGet($token, 'setWebhook', [
