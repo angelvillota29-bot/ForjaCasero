@@ -34,9 +34,11 @@ function gmailGetMessageMeta(string $accessToken, string $id): array {
     ];
 }
 
-function gmailAddLabel(string $accessToken, string $messageId, string $labelId): array {
-    $result = httpPostJson("https://gmail.googleapis.com/gmail/v1/users/me/messages/{$messageId}/modify", [
-        'addLabelIds' => [$labelId],
-    ], ['Authorization: Bearer ' . $accessToken]);
+function gmailAddLabel(string $accessToken, string $messageId, string $labelId, bool $archive = true): array {
+    $body = ['addLabelIds' => [$labelId]];
+    if ($archive) {
+        $body['removeLabelIds'] = ['INBOX'];
+    }
+    $result = httpPostJson("https://gmail.googleapis.com/gmail/v1/users/me/messages/{$messageId}/modify", $body, ['Authorization: Bearer ' . $accessToken]);
     return $result['body'];
 }
