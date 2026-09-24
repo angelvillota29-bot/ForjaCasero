@@ -523,17 +523,15 @@ async function renderBotResumenTab(host) {
 }
 
 function renderGoogleCard(container, bot) {
-    if (bot.googleConnected) {
-        container.innerHTML = `
-      <h3>Google Calendar</h3>
-      <p class="card-desc">Conectado. Este bot puede crear y consultar eventos en tu Google Calendar.</p>
-    `;
-        return;
-    }
+    const connected = bot.googleConnected;
     container.innerHTML = `
-    <h3>Google Calendar</h3>
-    <p class="card-desc">Conecta tu cuenta de Google para que este bot pueda crear y consultar eventos de calendario.</p>
-    <button class="btn" id="connectGoogleBtn">Conectar Google</button>
+    <h3>Google (Calendar / Gmail)</h3>
+    <p class="card-desc">
+      ${connected
+          ? 'Conectado. Este bot puede usar Calendar y Gmail según los permisos otorgados.'
+          : 'Conecta tu cuenta de Google para que este bot pueda usar Calendar y Gmail.'}
+    </p>
+    <button class="btn" id="connectGoogleBtn">${connected ? 'Reconectar / actualizar permisos' : 'Conectar Google'}</button>
   `;
     container.querySelector('#connectGoogleBtn').addEventListener('click', async () => {
         try {
