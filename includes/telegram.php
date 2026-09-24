@@ -51,12 +51,12 @@ function resolveOpenAiKey(array $bot, array $settings): string {
     return $settings['sharedApiKey'] ?? '';
 }
 
-function openaiChat(string $apiKey, string $model, array $messages): ?string {
+function openaiChat(string $apiKey, string $model, array $messages, int $timeout = 25): ?string {
     $result = httpPostJson('https://api.openai.com/v1/chat/completions', [
         'model' => $model !== '' ? $model : 'gpt-4o-mini',
         'messages' => $messages,
         'temperature' => 0.6,
-    ], ['Authorization: Bearer ' . $apiKey]);
+    ], ['Authorization: Bearer ' . $apiKey], $timeout);
 
     return $result['body']['choices'][0]['message']['content'] ?? null;
 }

@@ -205,7 +205,7 @@ function organizeGmail(array $bot, array $settings): string {
 
     $known = array_keys(GMAIL_LABEL_RULES);
     $exclude = implode(' ', array_map(fn($n) => '-label:"' . $n . '"', array_filter($known, fn($n) => isset($labelIdByName[$n]))));
-    $messageIds = gmailListMessageIds($token, "in:inbox {$exclude}", 15);
+    $messageIds = gmailListMessageIds($token, "in:inbox {$exclude}", 100);
 
     if (!$messageIds) {
         return 'No hay correos nuevos sin clasificar.';
@@ -228,7 +228,7 @@ function organizeGmail(array $bot, array $settings): string {
             "Clasifica cada correo en UNA de estas etiquetas según sus reglas:\n{$rulesText}\n" .
             "Responde SOLO un JSON: un array de objetos {\"id\": \"...\", \"label\": \"...\"}, un objeto por cada correo recibido, usando exactamente uno de los nombres de etiqueta de arriba."],
         ['role' => 'user', 'content' => $itemsText],
-    ]);
+    ], 60);
 
     $decoded = json_decode(trim((string) $classification), true);
     if (!is_array($decoded)) {

@@ -6,7 +6,7 @@ require_once __DIR__ . '/../../includes/storage.php';
 require_once __DIR__ . '/../../includes/telegram.php';
 require_once __DIR__ . '/../../includes/ai_engine.php';
 
-set_time_limit(90);
+set_time_limit(170);
 
 $botId = $_GET['bot'] ?? '';
 $data = readData();
