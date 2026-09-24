@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/google_api.php';
+require_once __DIR__ . '/gmail_api.php';
 
 // El "cerebro" del bot: prompt estructurado (como el de Forja: Rol, Info del
 // negocio, Frenos, Estilo), memoria de conversación por chat, y tools que la
@@ -124,6 +125,14 @@ function toolDefinitions(array $bot): array {
                 'parameters' => ['type' => 'object', 'properties' => new stdClass()],
             ],
         ];
+        $tools[] = [
+            'type' => 'function',
+            'function' => [
+                'name' => 'organizar_correo',
+                'description' => 'Revisa los correos nuevos sin clasificar del Gmail del dueño y les pone la etiqueta que corresponda.',
+                'parameters' => ['type' => 'object', 'properties' => new stdClass()],
+            ],
+        ];
     }
 
     return $tools;
@@ -164,6 +173,99 @@ function searchKnowledge(array $data, string $botId, string $query): string {
     return implode("\n\n", $out);
 }
 
+const GMAIL_LABEL_RULES = [
+    'Angel' => 'Correos que el dueño (Angel) se manda a sí mismo desde angelvillota4@gmail.com, o pedidos/compras que le llegan a su propio correo.',
+    'Ana' => 'Correos de amivica@gmail.com, EXCEPTO los que hablen de "Contabilidad- Delta Helicopteros SAS" (esos van en "Ana Contabilidad").',
+    'Ana Contabilidad' => 'Correos de amivica@gmail.com cuyo asunto o contenido mencione "Contabilidad- Delta Helicopteros SAS".',
+    'Banco caja social' => 'Notificaciones del Banco Caja Social (movimientos, extractos, alertas).',
+    'Computrabajo' => 'Correos de la plataforma CompuTrabajo (ofertas de empleo, postulaciones).',
+    'Documentos de acta de inicio' => 'Correos sobre actas de inicio de contratos o proyectos.',
+    'Duolingo' => 'Correos de Duolingo.',
+    'EPS' => 'Correos relacionados con la EPS de salud o con Comfenalco.',
+    'Etsy' => 'Correos de Etsy.',
+    'GOOGLE' => 'Alertas de Google (Google Alerts) o publicidad/notificaciones de servicios de Google.',
+    'Henry' => 'Correos de hjimenezr@sena.edu.co o henryjimenez.rosero@gmail.com (Henry Jimenez Rosero).',
+    'Instagram' => 'Correos de Instagram.',
+    'SENA' => 'Correos relacionados con el SENA que NO sean de Henry.',
+    'Shopify' => 'Correos de Shopify.',
+    'Otros' => 'Cualquier correo que no encaje claramente en ninguna de las anteriores.',
+];
+
+function organizeGmail(array $bot, array $settings): string {
+    $token = getGoogleAccessToken($bot, $settings);
+    if ($token === null) {
+        return 'El dueño todavía no conectó Gmail (o el permiso no incluye Gmail -- necesita reconectar Google).';
+    }
+
+    $labels = gmailListLabels($token);
+    $labelIdByName = [];
+    foreach ($labels as $l) {
+        $labelIdByName[$l['name']] = $l['id'];
+    }
+
+    $known = array_keys(GMAIL_LABEL_RULES);
+    $exclude = implode(' ', array_map(fn($n) => '-label:"' . $n . '"', array_filter($known, fn($n) => isset($labelIdByName[$n]))));
+    $messageIds = gmailListMessageIds($token, "in:inbox {$exclude}", 15);
+
+    if (!$messageIds) {
+        return 'No hay correos nuevos sin clasificar.';
+    }
+
+    $items = [];
+    foreach ($messageIds as $id) {
+        $items[] = gmailGetMessageMeta($token, $id);
+    }
+
+    $rulesText = '';
+    foreach (GMAIL_LABEL_RULES as $name => $desc) {
+        $rulesText .= "- {$name}: {$desc}\n";
+    }
+    $itemsText = json_encode($items, JSON_UNESCAPED_UNICODE);
+
+    $apiKey = resolveOpenAiKey($bot, $settings);
+    $classification = openaiChat($apiKey, $bot['aiModel'] ?? 'gpt-4o-mini', [
+        ['role' => 'system', 'content' =>
+            "Clasifica cada correo en UNA de estas etiquetas según sus reglas:\n{$rulesText}\n" .
+            "Responde SOLO un JSON: un array de objetos {\"id\": \"...\", \"label\": \"...\"}, un objeto por cada correo recibido, usando exactamente uno de los nombres de etiqueta de arriba."],
+        ['role' => 'user', 'content' => $itemsText],
+    ]);
+
+    $decoded = json_decode(trim((string) $classification), true);
+    if (!is_array($decoded)) {
+        // A veces el modelo envuelve el JSON en texto o markdown; intenta extraerlo.
+        if (preg_match('/\[.*\]/s', (string) $classification, $m)) {
+            $decoded = json_decode($m[0], true);
+        }
+    }
+    if (!is_array($decoded)) {
+        return 'No pude clasificar los correos esta vez, intenta de nuevo.';
+    }
+
+    $counts = [];
+    foreach ($decoded as $entry) {
+        $id = $entry['id'] ?? null;
+        $label = $entry['label'] ?? 'Otros';
+        if (!isset(GMAIL_LABEL_RULES[$label])) {
+            $label = 'Otros';
+        }
+        $labelId = $labelIdByName[$label] ?? null;
+        if ($id === null || $labelId === null) {
+            continue;
+        }
+        gmailAddLabel($token, $id, $labelId);
+        $counts[$label] = ($counts[$label] ?? 0) + 1;
+    }
+
+    if (!$counts) {
+        return 'No se pudo etiquetar ningún correo.';
+    }
+    $summary = [];
+    foreach ($counts as $label => $n) {
+        $summary[] = "{$n} a {$label}";
+    }
+    return 'Organicé ' . array_sum($counts) . ' correos: ' . implode(', ', $summary) . '.';
+}
+
 function addRecord(array &$data, string $collection, array $fields): void {
     $data['records'][$collection][] = array_merge($fields, [
         'id' => bin2hex(random_bytes(8)),
@@ -200,6 +302,9 @@ function executeTool(string $name, array $args, string $botId, array &$data, arr
             $lines[] = "- {$ev['summary']} ({$when})";
         }
         return implode("\n", $lines);
+    }
+    if ($name === 'organizar_correo') {
+        return organizeGmail($bot, $data['settings']);
     }
     if ($name === 'buscar_conocimiento') {
         return searchKnowledge($data, $botId, $args['consulta'] ?? '');

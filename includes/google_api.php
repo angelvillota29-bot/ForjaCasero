@@ -7,7 +7,7 @@ require_once __DIR__ . '/telegram.php';
 // Client ID público). Esto SÍ necesita el Client Secret, guardado en
 // settings.googleClientSecret, y un refresh token por bot.
 
-const GOOGLE_OAUTH_SCOPES = 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.send openid email';
+const GOOGLE_OAUTH_SCOPES = 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.modify openid email';
 
 function googleRedirectUri(): string {
     $base = rtrim((isHttpsRequest() ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? ''), '/');
