@@ -22,7 +22,20 @@ function defaultData(): array {
         'bots' => [],
         'records' => defaultRecords(),
         'chatHistory' => [],
+        'videoAssets' => [
+            'logoPath' => '',
+            'musicPath' => '',
+        ],
+        'videoProjects' => [],
     ];
+}
+
+// Carpeta de medios (clips crudos, assets de marca, videos renderizados).
+// Fuera del docroot igual que data.json; se sirve por api/videos/file.php
+// con autenticación, nunca por URL directa.
+function mediaDir(): string {
+    $dir = getenv('DATA_DIR') ?: '/var/www/data';
+    return rtrim($dir, '/') . '/media';
 }
 
 function defaultRecords(): array {
@@ -59,6 +72,8 @@ function readData(): array {
         $data['records'][$key] = $data['records'][$key] ?? [];
     }
     $data['chatHistory'] = $data['chatHistory'] ?? [];
+    $data['videoAssets'] = ($data['videoAssets'] ?? []) + defaultData()['videoAssets'];
+    $data['videoProjects'] = $data['videoProjects'] ?? [];
     return $data;
 }
 

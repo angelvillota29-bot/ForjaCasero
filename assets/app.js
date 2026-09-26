@@ -8,6 +8,14 @@ const NICHES = {
     otro: 'Otro',
 };
 
+const VIDEO_PILLARS = {
+    dolor: 'Dolor del cliente',
+    demo: 'Detrás de cámaras / demo',
+    educativo: 'Educativo',
+    resultado: 'Resultado/beneficio',
+    cta: 'CTA directo / oferta',
+};
+
 const BOT_TABS = [
     { key: 'resumen', label: 'Resumen' },
     { key: 'conversations', label: 'Conversaciones' },
@@ -146,6 +154,7 @@ function renderShell() {
       <div class="nav-group-label">Panel</div>
       <button class="nav-item" data-view="resumen">Resumen</button>
       <button class="nav-item" data-view="bots">Bots</button>
+      <button class="nav-item" data-view="videos">Videos</button>
       <div class="nav-group-label">Configuración</div>
       <button class="nav-item" data-view="conexiones">Conexiones</button>
       <button class="nav-item" data-view="accesos">Accesos</button>
@@ -180,6 +189,7 @@ async function switchView(view) {
     try {
         if (view === 'resumen') await renderResumen(main);
         else if (view === 'bots') await renderBots(main);
+        else if (view === 'videos') await renderVideos(main);
         else if (view === 'conexiones') await renderConexiones(main);
         else if (view === 'accesos') await renderAccesos(main);
     } catch (err) {
@@ -859,6 +869,322 @@ async function renderAccesos(main) {
         } catch (err) {
             toast(err.message, 'error');
         }
+    });
+}
+
+/* ---------------- Videos ---------------- */
+
+async function uploadFile(url, formData) {
+    const res = await fetch(url, { method: 'POST', credentials: 'same-origin', body: formData });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.success === false) throw new Error(data.error || `Error ${res.status}`);
+    return data;
+}
+
+async function renderVideos(main) {
+    const res = await api('api/videos/list.php');
+    const projects = res.projects;
+    const assets = res.assets;
+
+    main.innerHTML = `
+    <div class="topbar">
+      <div>
+        <div class="breadcrumb">Panel / Videos</div>
+        <h1 class="page-title">Videos publicitarios</h1>
+      </div>
+      <button class="btn" id="addVideoBtn">+ Nuevo proyecto</button>
+    </div>
+    <div class="intro-banner">
+      Sube tus screen-recordings, genera el guion con IA y arma un video vertical
+      listo para publicar: intro con gancho, tus clips, marca de agua, música y
+      cierre con llamado a la acción — todo procesado en tu propio servidor.
+    </div>
+    <div class="card" style="margin-bottom:20px;">
+      <h3>Marca (se reutiliza en todos los videos)</h3>
+      <div class="card-desc" style="margin-bottom:12px;">
+        Logo: ${assets.logoSet ? '<span class="badge badge-green">Configurado</span>' : '<span class="badge badge-muted">Sin subir</span>'}
+        &nbsp;&nbsp; Música: ${assets.musicSet ? '<span class="badge badge-green">Configurada</span>' : '<span class="badge badge-muted">Sin subir</span>'}
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <label class="btn btn-secondary" style="cursor:pointer;">Subir logo (PNG/JPG)<input type="file" id="logoInput" accept="image/png,image/jpeg,image/webp" style="display:none;"></label>
+        <label class="btn btn-secondary" style="cursor:pointer;">Subir música (MP3)<input type="file" id="musicInput" accept="audio/mpeg,audio/mp4,audio/wav,audio/aac" style="display:none;"></label>
+      </div>
+    </div>
+    ${projects.length === 0
+        ? '<div class="empty-state">Aún no has creado ningún proyecto de video.</div>'
+        : `<div class="bots-grid">${projects.map(videoCardHtml).join('')}</div>`}
+  `;
+
+    document.getElementById('addVideoBtn').addEventListener('click', () => openVideoModal());
+    document.getElementById('logoInput').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const fd = new FormData();
+        fd.append('type', 'logo');
+        fd.append('file', file);
+        try {
+            await uploadFile('api/videos/assets/upload.php', fd);
+            toast('Logo guardado');
+            renderVideos(main);
+        } catch (err) { toast(err.message, 'error'); }
+    });
+    document.getElementById('musicInput').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const fd = new FormData();
+        fd.append('type', 'music');
+        fd.append('file', file);
+        try {
+            await uploadFile('api/videos/assets/upload.php', fd);
+            toast('Música guardada');
+            renderVideos(main);
+        } catch (err) { toast(err.message, 'error'); }
+    });
+    main.querySelectorAll('.video-card').forEach((el) => {
+        el.addEventListener('click', () => openVideoWorkspace(el.dataset.id));
+    });
+}
+
+function videoStatusBadge(status) {
+    if (status === 'done') return '<span class="badge badge-green">Listo</span>';
+    if (status === 'rendering') return '<span class="badge badge-orange">Generando…</span>';
+    if (status === 'error') return '<span class="badge badge-muted" style="color:#e05252;">Error</span>';
+    return '<span class="badge badge-muted">Borrador</span>';
+}
+
+function videoCardHtml(p) {
+    return `
+    <div class="bot-card video-card" data-id="${p.id}" style="cursor:pointer;">
+      <h3>${escapeHtml(p.title)}</h3>
+      <div class="card-desc">${VIDEO_PILLARS[p.pillar] || p.pillar}</div>
+      <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+        ${videoStatusBadge(p.status)}
+        <span class="badge badge-muted">${p.clipCount} clip${p.clipCount === 1 ? '' : 's'}</span>
+      </div>
+    </div>`;
+}
+
+function openVideoModal() {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Nuevo proyecto de video</h3>
+        <button class="modal-close" id="closeModal">✕</button>
+      </div>
+      <div class="field">
+        <label>Título / referencia del post</label>
+        <input type="text" id="fVTitle" placeholder="Ej. ¿Cuántos mensajes dejas sin responder?">
+      </div>
+      <div class="field">
+        <label>Pilar de contenido</label>
+        <select id="fVPillar">
+          ${Object.entries(VIDEO_PILLARS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
+        </select>
+      </div>
+      <div class="modal-actions">
+        <span></span>
+        <div class="right">
+          <button class="btn btn-secondary" id="cancelModal">Cancelar</button>
+          <button class="btn" id="saveVideoBtn">Crear</button>
+        </div>
+      </div>
+    </div>`;
+    document.body.appendChild(backdrop);
+    const close = () => backdrop.remove();
+    backdrop.querySelector('#closeModal').addEventListener('click', close);
+    backdrop.querySelector('#cancelModal').addEventListener('click', close);
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+    backdrop.querySelector('#saveVideoBtn').addEventListener('click', async () => {
+        const title = backdrop.querySelector('#fVTitle').value.trim();
+        if (!title) { toast('Ponle un título', 'error'); return; }
+        try {
+            const res = await api('api/videos/save.php', {
+                method: 'POST',
+                body: { title, pillar: backdrop.querySelector('#fVPillar').value },
+            });
+            close();
+            openVideoWorkspace(res.id);
+        } catch (err) { toast(err.message, 'error'); }
+    });
+}
+
+async function openVideoWorkspace(id) {
+    const main = document.getElementById('mainContent');
+    const res = await api(`api/videos/get.php?id=${encodeURIComponent(id)}`);
+    const p = res.project;
+
+    main.innerHTML = `
+    <div class="topbar">
+      <div>
+        <div class="breadcrumb"><a href="#" id="backToVideos" style="color:inherit;">Videos</a> / ${escapeHtml(p.title)}</div>
+        <h1 class="page-title">${escapeHtml(p.title)}</h1>
+      </div>
+      ${videoStatusBadge(p.status)}
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <h3>Guion</h3>
+      <div class="field">
+        <label>Pilar</label>
+        <select id="wPillar">
+          ${Object.entries(VIDEO_PILLARS).map(([k, v]) => `<option value="${k}" ${p.pillar === k ? 'selected' : ''}>${v}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field">
+        <label>Gancho (tarjeta de apertura)</label>
+        <textarea id="wHook" placeholder="Frase corta y fuerte para abrir el video">${escapeHtml(p.hook || '')}</textarea>
+      </div>
+      <div class="field">
+        <label>Guion / texto de apoyo</label>
+        <textarea id="wScript" placeholder="Lo que dices o muestras mientras corre el screen-recording">${escapeHtml(p.script || '')}</textarea>
+      </div>
+      <div class="field">
+        <label>CTA (tarjeta de cierre)</label>
+        <textarea id="wCta" placeholder="Llamado a la acción final">${escapeHtml(p.cta || '')}</textarea>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn btn-secondary" id="genScriptBtn">✨ Generar con IA</button>
+        <button class="btn" id="saveScriptBtn">Guardar guion</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <h3>Opciones</h3>
+      <label class="radio-option" style="display:block;margin-bottom:8px;"><input type="checkbox" id="wSubtitles" ${p.subtitlesEnabled ? 'checked' : ''}> Generar subtítulos automáticos (transcribe el audio de tus clips)</label>
+      <label class="radio-option" style="display:block;"><input type="checkbox" id="wMusic" ${p.musicEnabled ? 'checked' : ''}> Agregar música de fondo (la que subiste en Videos)</label>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <h3>Clips (en orden de aparición)</h3>
+      <div id="clipsList">${clipsListHtml(p)}</div>
+      <label class="btn btn-secondary" style="cursor:pointer;display:inline-block;margin-top:10px;">+ Subir clip<input type="file" id="clipInput" accept="video/mp4,video/quicktime,video/webm,video/x-matroska" style="display:none;"></label>
+    </div>
+
+    <div class="card">
+      <h3>Render final</h3>
+      <div class="card-desc" style="margin-bottom:12px;">Puede tardar uno o varios minutos según cuántos clips subiste. No cierres esta pestaña mientras dice "Generando…".</div>
+      ${p.status === 'error' ? `<div class="field-hint" style="color:#e05252;margin-bottom:10px;">${escapeHtml(p.error || 'Error desconocido')}</div>` : ''}
+      <button class="btn" id="renderBtn" ${p.clips.length === 0 ? 'disabled' : ''}>${p.status === 'rendering' ? 'Generando…' : '🎬 Generar video'}</button>
+      ${p.status === 'done' ? `
+        <div style="margin-top:16px;">
+          <video controls style="max-width:280px;border-radius:12px;" src="api/videos/file.php?project=${p.id}&kind=output"></video>
+          <div style="margin-top:10px;"><a class="btn btn-secondary" href="api/videos/file.php?project=${p.id}&kind=output" download="${escapeAttr(p.title)}.mp4">Descargar MP4</a></div>
+        </div>` : ''}
+    </div>
+  `;
+
+    document.getElementById('backToVideos').addEventListener('click', (e) => { e.preventDefault(); switchView('videos'); });
+
+    const collectFields = () => ({
+        id: p.id, title: p.title, pillar: document.getElementById('wPillar').value,
+        hook: document.getElementById('wHook').value, cta: document.getElementById('wCta').value,
+        script: document.getElementById('wScript').value,
+        subtitlesEnabled: document.getElementById('wSubtitles').checked,
+        musicEnabled: document.getElementById('wMusic').checked,
+    });
+
+    document.getElementById('genScriptBtn').addEventListener('click', async (e) => {
+        e.target.disabled = true;
+        e.target.textContent = 'Generando…';
+        try {
+            await api('api/videos/save.php', { method: 'POST', body: collectFields() });
+            const gen = await api('api/videos/generate-script.php', { method: 'POST', body: { id: p.id } });
+            document.getElementById('wHook').value = gen.hook;
+            document.getElementById('wScript').value = gen.script;
+            document.getElementById('wCta').value = gen.cta;
+            toast('Guion generado');
+        } catch (err) {
+            toast(err.message, 'error');
+        } finally {
+            e.target.disabled = false;
+            e.target.textContent = '✨ Generar con IA';
+        }
+    });
+
+    document.getElementById('saveScriptBtn').addEventListener('click', async () => {
+        try {
+            await api('api/videos/save.php', { method: 'POST', body: collectFields() });
+            toast('Guardado');
+        } catch (err) { toast(err.message, 'error'); }
+    });
+
+    document.getElementById('clipInput').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const fd = new FormData();
+        fd.append('projectId', p.id);
+        fd.append('file', file);
+        toast('Subiendo clip…');
+        try {
+            await uploadFile('api/videos/clips/upload.php', fd);
+            openVideoWorkspace(p.id);
+        } catch (err) { toast(err.message, 'error'); }
+    });
+
+    bindClipRowEvents(p);
+
+    document.getElementById('renderBtn').addEventListener('click', async () => {
+        const btn = document.getElementById('renderBtn');
+        btn.disabled = true;
+        btn.textContent = 'Generando…';
+        try {
+            await api('api/videos/render.php', { method: 'POST', body: { id: p.id } });
+            toast('Video generado');
+        } catch (err) {
+            toast(err.message, 'error');
+        } finally {
+            openVideoWorkspace(p.id);
+        }
+    });
+}
+
+function clipsListHtml(p) {
+    if (p.clips.length === 0) return '<div class="field-hint">Aún no subes clips.</div>';
+    const sorted = [...p.clips].sort((a, b) => a.order - b.order);
+    return sorted.map((c, i) => `
+    <div class="clip-row" data-clip-id="${c.id}" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border, #2a2a2a);">
+      <span class="badge badge-muted">#${i + 1}</span>
+      <video src="api/videos/file.php?project=${p.id}&kind=clip&clipId=${c.id}" style="width:90px;height:60px;object-fit:cover;border-radius:8px;background:#000;" muted></video>
+      <span style="flex:1;font-size:13px;">${escapeHtml(c.filename)}</span>
+      <button class="btn btn-secondary clip-up" ${i === 0 ? 'disabled' : ''}>↑</button>
+      <button class="btn btn-secondary clip-down" ${i === sorted.length - 1 ? 'disabled' : ''}>↓</button>
+      <button class="btn btn-danger clip-delete">Eliminar</button>
+    </div>`).join('');
+}
+
+function bindClipRowEvents(p) {
+    const list = document.getElementById('clipsList');
+    const getOrderedIds = () => Array.from(list.querySelectorAll('.clip-row')).map((r) => r.dataset.clipId);
+
+    list.querySelectorAll('.clip-delete').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+            const clipId = btn.closest('.clip-row').dataset.clipId;
+            try {
+                await api('api/videos/clips/delete.php', { method: 'POST', body: { projectId: p.id, clipId } });
+                openVideoWorkspace(p.id);
+            } catch (err) { toast(err.message, 'error'); }
+        });
+    });
+
+    const reorder = async (row, direction) => {
+        const ids = getOrderedIds();
+        const idx = ids.indexOf(row.dataset.clipId);
+        const swapWith = idx + direction;
+        if (swapWith < 0 || swapWith >= ids.length) return;
+        [ids[idx], ids[swapWith]] = [ids[swapWith], ids[idx]];
+        try {
+            await api('api/videos/clips/reorder.php', { method: 'POST', body: { projectId: p.id, clipIds: ids } });
+            openVideoWorkspace(p.id);
+        } catch (err) { toast(err.message, 'error'); }
+    };
+
+    list.querySelectorAll('.clip-up').forEach((btn) => {
+        btn.addEventListener('click', () => reorder(btn.closest('.clip-row'), -1));
+    });
+    list.querySelectorAll('.clip-down').forEach((btn) => {
+        btn.addEventListener('click', () => reorder(btn.closest('.clip-row'), 1));
     });
 }
 
