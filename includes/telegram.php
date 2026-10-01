@@ -30,6 +30,21 @@ function httpGetJson(string $url, int $timeout = 15): array {
     return is_array($decoded) ? $decoded : [];
 }
 
+// GET crudo (no JSON) con un User-Agent de navegador normal -- lo usa el
+// buscador de restaurantes para leer HTML de resultados de búsqueda.
+function httpGetRaw(string $url, array $headers = [], int $timeout = 15): ?string {
+    $headerLines = array_merge(['User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'], $headers);
+    $context = stream_context_create([
+        'http' => [
+            'header' => implode("\r\n", $headerLines),
+            'timeout' => $timeout,
+            'ignore_errors' => true,
+        ],
+    ]);
+    $raw = @file_get_contents($url, false, $context);
+    return $raw !== false ? $raw : null;
+}
+
 function telegramApiGet(string $token, string $method, array $params = []): array {
     $url = "https://api.telegram.org/bot{$token}/{$method}";
     if ($params) {

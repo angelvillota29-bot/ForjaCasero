@@ -17,6 +17,7 @@ $ownApiKeyInput = $input['ownApiKey'] ?? null; // null = no tocar; '' = borrar; 
 $aiInstructions = trim($input['aiInstructions'] ?? '');
 $aiModel = trim($input['aiModel'] ?? 'gpt-4o-mini');
 $businessInfo = trim($input['businessInfo'] ?? '');
+$restaurantSearchEnabled = !empty($input['restaurantSearchEnabled']);
 
 $data = readData();
 $now = date('c');
@@ -35,6 +36,7 @@ if ($id) {
             $bot['aiInstructions'] = $aiInstructions;
             $bot['aiModel'] = $aiModel;
             $bot['businessInfo'] = $businessInfo;
+            $bot['restaurantSearchEnabled'] = $restaurantSearchEnabled;
             if ($ownApiKeyInput !== null) {
                 $bot['ownApiKey'] = $ownApiKeyInput;
             }
@@ -63,6 +65,7 @@ if ($id) {
         'aiInstructions' => $aiInstructions,
         'aiModel' => $aiModel,
         'businessInfo' => $businessInfo,
+        'restaurantSearchEnabled' => $restaurantSearchEnabled,
         'createdBy' => $userEmail,
         'createdAt' => $now,
         'updatedAt' => $now,

@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/google_api.php';
 require_once __DIR__ . '/gmail_api.php';
+require_once __DIR__ . '/restaurant_finder.php';
 
 // El "cerebro" del bot: prompt estructurado (como el de Forja: Rol, Info del
 // negocio, Frenos, Estilo), memoria de conversación por chat, y tools que la
@@ -23,6 +24,9 @@ function buildSystemPrompt(array $bot): string {
     $lines[] = "Fecha y hora actual (America/Bogota): " . date('l j \d\e F Y, H:i');
     if (!empty($bot['googleRefreshToken'])) {
         $lines[] = "Tienes acceso a Google Calendar del dueño (crear_evento_calendario, consultar_calendario). Usa fechas ISO 8601 con offset -05:00.";
+    }
+    if (!empty($bot['restaurantSearchEnabled'])) {
+        $lines[] = "Puedes usar buscar_restaurantes_sin_sitio_web cuando el dueño te pida encontrar restaurantes (de una ciudad/zona) que no tengan página web, para ofrecerles el servicio del dueño. Pide la ciudad si no la dio.";
     }
 
     $lines[] = "";
@@ -131,6 +135,24 @@ function toolDefinitions(array $bot): array {
                 'name' => 'organizar_correo',
                 'description' => 'Revisa los correos nuevos sin clasificar del Gmail del dueño y les pone la etiqueta que corresponda.',
                 'parameters' => ['type' => 'object', 'properties' => new stdClass()],
+            ],
+        ];
+    }
+
+    if (!empty($bot['restaurantSearchEnabled'])) {
+        $tools[] = [
+            'type' => 'function',
+            'function' => [
+                'name' => 'buscar_restaurantes_sin_sitio_web',
+                'description' => 'Busca restaurantes de una ciudad o zona que no parecen tener sitio web propio (solo redes sociales o nada), para que el dueño les ofrezca su servicio de páginas web/bots. Guarda la lista en una hoja de Google Sheets si el dueño ya conectó Google.',
+                'parameters' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'ciudad' => ['type' => 'string', 'description' => 'Ciudad o zona donde buscar, ej. "Pasto, Nariño"'],
+                        'cantidad' => ['type' => 'integer', 'description' => 'Cuántos resultados buscar como máximo (por defecto 8, máximo 15)'],
+                    ],
+                    'required' => ['ciudad'],
+                ],
             ],
         ];
     }
@@ -275,7 +297,68 @@ function addRecord(array &$data, string $collection, array $fields): void {
     ]);
 }
 
+// Reutiliza la hoja de Sheets de este bot si ya existe (guardada en el
+// propio registro del bot); si no, crea una nueva en la cuenta de Google del
+// dueño y guarda su ID para la próxima vez. Muta $data (persiste al final
+// del webhook con writeData()).
+function ensureRestaurantSheet(array &$data, string $botId, string $accessToken, string $botName): ?array {
+    foreach ($data['bots'] as &$b) {
+        if ($b['id'] !== $botId) continue;
+        if (!empty($b['restaurantSearchSheetId'])) {
+            return ['id' => $b['restaurantSearchSheetId'], 'url' => $b['restaurantSearchSheetUrl'] ?? ''];
+        }
+        $creada = sheetsCreateSpreadsheet($accessToken, 'Restaurantes sin sitio web - ' . $botName);
+        if ($creada === null) {
+            return null;
+        }
+        $b['restaurantSearchSheetId'] = $creada['id'];
+        $b['restaurantSearchSheetUrl'] = $creada['url'] ?? '';
+        sheetsAppendRows($accessToken, $creada['id'], 'A1', [['Nombre', 'Ciudad', 'Referencia encontrada', 'Fecha']]);
+        return $creada;
+    }
+    unset($b);
+    return null;
+}
+
+function buscarYGuardarRestaurantes(array $bot, string $botId, array &$data, string $ciudad, int $cantidad): string {
+    $ciudad = trim($ciudad);
+    if ($ciudad === '') {
+        return 'Necesito que me digas la ciudad o zona donde buscar.';
+    }
+    $cantidad = $cantidad > 0 ? $cantidad : 8;
+
+    $encontrados = buscarRestaurantesSinSitioWeb($ciudad, $cantidad);
+    if (!$encontrados) {
+        return "No encontré restaurantes claramente sin sitio web en {$ciudad} con esta búsqueda. Puede que sí tengan y no se notó bien, o que la búsqueda no haya alcanzado -- intenta con una zona más específica o vuelve a intentar.";
+    }
+
+    $token = getGoogleAccessToken($bot, $data['settings']);
+    $guardadoEnSheets = false;
+    $sheetUrl = '';
+    if ($token !== null) {
+        $sheet = ensureRestaurantSheet($data, $botId, $token, $bot['name'] ?? 'Bot');
+        if ($sheet !== null) {
+            $filas = array_map(fn($r) => [$r['nombre'], $r['ciudad'], $r['referencia'], date('Y-m-d H:i')], $encontrados);
+            sheetsAppendRows($token, $sheet['id'], 'A1', $filas);
+            $guardadoEnSheets = true;
+            $sheetUrl = $sheet['url'];
+        }
+    }
+
+    $lineas = array_map(fn($r) => "- {$r['nombre']}", $encontrados);
+    $resumen = 'Encontré ' . count($encontrados) . " restaurantes en {$ciudad} que parecen no tener sitio web propio:\n" . implode("\n", $lineas);
+    if ($guardadoEnSheets) {
+        $resumen .= "\n\nQuedaron guardados en la hoja de Google Sheets" . ($sheetUrl !== '' ? ": {$sheetUrl}" : '.');
+    } else {
+        $resumen .= "\n\n(No se pudieron guardar en Sheets -- conecta Google a este bot desde el panel para que se guarden automáticamente la próxima vez.)";
+    }
+    return $resumen;
+}
+
 function executeTool(string $name, array $args, string $botId, array &$data, array $bot): string {
+    if ($name === 'buscar_restaurantes_sin_sitio_web') {
+        return buscarYGuardarRestaurantes($bot, $botId, $data, $args['ciudad'] ?? '', (int) ($args['cantidad'] ?? 8));
+    }
     if ($name === 'crear_evento_calendario') {
         $token = getGoogleAccessToken($bot, $data['settings']);
         if ($token === null) {

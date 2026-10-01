@@ -100,6 +100,30 @@ function calendarListUpcoming(string $accessToken, int $maxResults = 8): array {
     return $result['items'] ?? [];
 }
 
+// Crea una hoja de cálculo nueva en la cuenta de Google del dueño (la misma
+// que ya conectó para Calendar/Gmail -- reutiliza el refresh token del bot,
+// el scope spreadsheets ya estaba pedido desde antes). Devuelve
+// ['id' => ..., 'url' => ...] o null si falla.
+function sheetsCreateSpreadsheet(string $accessToken, string $title): ?array {
+    $result = httpPostJson('https://sheets.googleapis.com/v4/spreadsheets', [
+        'properties' => ['title' => $title],
+    ], ['Authorization: Bearer ' . $accessToken], 20);
+    $id = $result['body']['spreadsheetId'] ?? null;
+    if (!$id) {
+        return null;
+    }
+    return ['id' => $id, 'url' => $result['body']['spreadsheetUrl'] ?? ("https://docs.google.com/spreadsheets/d/{$id}/edit")];
+}
+
+// Agrega filas al final de un rango (ej. "A1") -- Sheets decide la primera
+// fila libre solo. $rows es un arreglo de arreglos (una fila por elemento).
+function sheetsAppendRows(string $accessToken, string $spreadsheetId, string $range, array $rows): array {
+    $url = 'https://sheets.googleapis.com/v4/spreadsheets/' . rawurlencode($spreadsheetId)
+        . '/values/' . rawurlencode($range) . ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS';
+    $result = httpPostJson($url, ['values' => $rows], ['Authorization: Bearer ' . $accessToken], 20);
+    return $result['body'];
+}
+
 function httpGetJsonAuth(string $url, string $accessToken): array {
     $context = stream_context_create([
         'http' => [

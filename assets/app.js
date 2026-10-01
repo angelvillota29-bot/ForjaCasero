@@ -361,6 +361,10 @@ function openBotModal(bot) {
         <label>Instrucciones para la IA (opcional)</label>
         <textarea id="fAiInstructions" placeholder="Ej. Sé breve, ofrece agendar una llamada si preguntan por precios.">${escapeHtml(bot?.aiInstructions || '')}</textarea>
       </div>
+      <div class="field">
+        <label class="radio-option"><input type="checkbox" id="fRestaurantSearch" ${bot?.restaurantSearchEnabled ? 'checked' : ''}> Buscar restaurantes sin sitio web (herramienta especial)</label>
+        <div class="field-hint">El bot podrá buscar restaurantes de una ciudad que no parecen tener página propia, y guardar la lista en una hoja de Google Sheets (necesita tener Google conectado para guardar automáticamente).</div>
+      </div>
       <div class="modal-actions">
         ${isEdit ? '<button class="btn btn-danger" id="deleteBotBtn">Eliminar</button>' : '<span></span>'}
         <div class="right">
@@ -396,6 +400,7 @@ function openBotModal(bot) {
             aiModel: backdrop.querySelector('#fAiModel').value.trim(),
             businessInfo: backdrop.querySelector('#fBusinessInfo').value.trim(),
             aiInstructions: backdrop.querySelector('#fAiInstructions').value.trim(),
+            restaurantSearchEnabled: backdrop.querySelector('#fRestaurantSearch').checked,
         };
         const ownKeyInput = backdrop.querySelector('#fOwnKey').value;
         if (payload.keyMode === 'own' && ownKeyInput !== '') {
